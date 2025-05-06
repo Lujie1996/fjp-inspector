@@ -1,0 +1,11 @@
+Build the jar: 
+-------------------
+chmod +x build.sh
+
+Run
+-------------------
+jcmd <PID> JVMTI.agent_load /path/to/fjp-agent.jar
+
+Verify
+-------------------
+For tanuki managed JVMs the output can be found in tanuki logs.
