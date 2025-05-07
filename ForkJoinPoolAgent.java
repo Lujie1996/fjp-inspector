@@ -3,29 +3,36 @@ import java.lang.reflect.Field;
 import java.util.concurrent.ForkJoinPool;
 
 public class ForkJoinPoolAgent {
-    public static void premain(String agentArgs, Instrumentation inst) {
-        try {
-            String className = "org.corfudb.runtime.collections.Table";
 
+    public static void premain(String agentArgs, Instrumentation inst) {
+        String corfuTableClassName = "org.corfudb.runtime.collections.Table";
+        printCtlOfFJP(corfuTableClassName, "pool", inst);
+
+        String fjpClassName = "java.util.concurrent.ForkJoinPool";
+        printCtlOfFJP(fjpClassName, "common", inst);
+    }
+
+    private static void printCtlOfFJP(String className, String staticFieldName, Instrumentation inst) {
+        try {
             // Get the current thread's context classloader
-            // Try to load class Table using the current thread's context classloader
-            Class<?> classTable = null;
+            // Try to load the class using the current thread's context classloader
+            Class<?> targetClass = null;
             Thread currentThread = Thread.currentThread();
             ClassLoader originalContextClassLoader = currentThread.getContextClassLoader();
 
             try {
-                classTable = Class.forName(className, true, originalContextClassLoader);
+                targetClass = Class.forName(className, true, originalContextClassLoader);
             } catch (ClassNotFoundException e) {
                 System.out.println("Class not found with context classloader: " + e.getMessage());
             }
 
             // If not found, iterate through all classloaders
-            if (classTable == null) {
+            if (targetClass == null) {
                 for (Class<?> loadedClass : inst.getAllLoadedClasses()) {
                     ClassLoader cl = loadedClass.getClassLoader();
                     if (cl != null) {
                         try {
-                            classTable = Class.forName(className, true, cl);
+                            targetClass = Class.forName(className, true, cl);
                             System.out.println("Found class with classloader: " + cl);
                             break;
                         } catch (ClassNotFoundException ignored) {
@@ -35,16 +42,16 @@ public class ForkJoinPoolAgent {
                 }
             }
 
-            if (classTable == null) {
-                throw new ClassNotFoundException("Could not find class org.corfudb.runtime.collections.Table in any classloader");
+            if (targetClass == null) {
+                throw new ClassNotFoundException("Could not find class in any classloader");
             }
 
-            // Get the static field 'pool' from class
-            Field poolField = classTable.getDeclaredField("pool");
-            poolField.setAccessible(true);
+            // Get the static field from class
+            Field targetField = targetClass.getDeclaredField(staticFieldName);
+            targetField.setAccessible(true);
 
             // Get the ForkJoinPool instance
-            ForkJoinPool pool = (ForkJoinPool) poolField.get(null);
+            ForkJoinPool pool = (ForkJoinPool) targetField.get(null);
 
             // Get the 'ctl' field from ForkJoinPool
             Field ctlField = ForkJoinPool.class.getDeclaredField("ctl");
@@ -54,7 +61,8 @@ public class ForkJoinPoolAgent {
             long ctlValue = ctlField.getLong(pool);
 
             // Print the ctl value
-            System.out.println("ForkJoinPool ctl value: " + ctlAsBinary(ctlValue));
+            System.out.println("ForkJoinPool ctl value for " + className + "." + staticFieldName +
+                    ": " + ctlAsBinary(ctlValue));
 
         } catch (ClassNotFoundException e) {
             System.err.println("Class not found: " + e.getMessage());
